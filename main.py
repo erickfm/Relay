@@ -8,6 +8,8 @@ import sys
 import os
 import logging
 import traceback
+import argparse
+import time
 from pathlib import Path
 
 # Add the relay package to the path
@@ -17,12 +19,13 @@ from relay.config import Config
 from relay.core.vision_engine import VisionEngine
 from relay.core.automation_engine import AutomationEngine
 from relay.core.task_controller import TaskController
-from relay.ui.main_window import MainWindow
 
 def setup_logging(config: Config):
     """Setup logging configuration"""
     log_config = config.get_logging_settings()
-    log_level = getattr(logging, log_config.get("level", "INFO").upper())
+    # Allow environment variable RELAY_LOG_LEVEL to override config
+    log_level_str = os.getenv("RELAY_LOG_LEVEL", log_config.get("level", "INFO")).upper()
+    log_level = getattr(logging, log_level_str, logging.INFO)
     
     # Create logs directory
     log_dir = Path.home() / ".relay" / "logs"
@@ -38,6 +41,20 @@ def setup_logging(config: Config):
         ]
     )
 
+    # Reduce noise from third-party libraries when we are in DEBUG mode.
+    # We only want our pretty prompt/response logs, not the massive HTTP payload dumps.
+    if log_level == logging.DEBUG:
+        noisy_loggers = [
+            "openai._base_client",
+            "openai",
+            "httpcore",
+            "httpcore.http11",
+            "httpx",
+            "PIL",
+        ]
+        for nl in noisy_loggers:
+            logging.getLogger(nl).setLevel(logging.INFO)
+
 def check_dependencies():
     """Check if all required dependencies are available"""
     missing_deps = []
@@ -52,10 +69,6 @@ def check_dependencies():
     except ImportError:
         missing_deps.append("pyautogui")
     
-    try:
-        import customtkinter
-    except ImportError:
-        missing_deps.append("customtkinter")
     
     try:
         from PIL import Image
@@ -158,11 +171,11 @@ def main():
         # Vision engine
         vision_engine = VisionEngine(
             api_key=config.get_openai_api_key(),
-            model=config.get("model", "gpt-4-vision-preview")
+            model=config.get("model", "gpt-4o")
         )
         
         # Automation engine
-        automation_engine = AutomationEngine()
+        automation_engine = AutomationEngine(vision_engine)
         
         # Task controller
         task_controller = TaskController(vision_engine, automation_engine)
@@ -173,16 +186,55 @@ def main():
         
         logger.info("Components initialized successfully")
         
-        # Create and run UI
-        logger.info("Starting user interface...")
-        app = MainWindow(task_controller)
+        # Start command-line interface
+        logger.info("Starting command-line interface...")
+        parser = argparse.ArgumentParser(description="RELAY CLI Assistant")
+        parser.add_argument("--task", help="Task description to run immediately")
+        args, unknown = parser.parse_known_args()
         
-        print("✅ RELAY is ready!")
-        print("💡 Try asking it to: 'Make a dad rock playlist on Spotify'")
-        print("🛑 Move mouse to screen corner for emergency stop")
-        print("=" * 50)
+        def print_status(status):
+            status_line = (
+                f"[STATUS] Iter {status.current_iteration} | "
+                f"Actions {status.successful_actions}/{status.total_actions} | "
+                f"Current: {status.current_action}"
+            )
+            print(status_line)
         
-        app.run()
+        def print_narration(message: str):
+            print(f"[NARRATION] {message}")
+        
+        def print_completion(success: bool, message: str):
+            print(f"[COMPLETION] Success: {success} | {message}")
+        
+        def run_task(task_desc: str):
+            started = task_controller.execute_task(
+                task_desc,
+                on_status_update=print_status,
+                on_narration=print_narration,
+                on_completion=print_completion
+            )
+            if not started:
+                print("⚠️  A task is already running. Please wait for it to finish.")
+                return
+            while task_controller.task_status.is_running:
+                time.sleep(1)
+        
+        if args.task:
+            run_task(args.task)
+        else:
+            print("✅ RELAY CLI is ready!")
+            print("Type your task description and press Enter (type 'exit' to quit).")
+            while True:
+                try:
+                    task_input = input("\n📋 Task> ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    print("\n👋 Exiting RELAY.")
+                    break
+                if task_input.lower() in {"exit", "quit", "q"}:
+                    break
+                if not task_input:
+                    continue
+                run_task(task_input)
         
     except KeyboardInterrupt:
         print("\n👋 RELAY stopped by user")

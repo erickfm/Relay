@@ -28,7 +28,7 @@ class Config:
         """Load configuration from file"""
         default_config = {
             "openai_api_key": "",
-            "model": "gpt-4-vision-preview",
+            "model": "gpt-4o-mini",
             "max_iterations": 50,
             "max_failures": 10,
             "confidence_threshold": 3,

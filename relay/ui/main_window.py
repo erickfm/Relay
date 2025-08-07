@@ -110,8 +110,7 @@ class MainWindow:
         # Text input
         self.task_input = ctk.CTkTextbox(
             input_frame,
-            height=100,
-            placeholder_text="e.g., 'Make a dad rock playlist on Spotify' or 'Fill out this checkout form with my usual info'"
+            height=100
         )
         self.task_input.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 15))
         

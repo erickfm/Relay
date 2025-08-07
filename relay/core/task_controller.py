@@ -160,6 +160,10 @@ class TaskController:
             if not screenshot:
                 return False
             
+            # Debug coordinate mapping
+            debug_info = self.automation_engine.debug_coordinate_mapping(screenshot)
+            self.logger.info(f"Coordinate mapping debug: {debug_info}")
+            
             # Update context
             self.context.current_screenshot = self._screenshot_to_base64(screenshot)
             self.context.iteration_count = self.task_status.current_iteration
